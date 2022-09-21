@@ -1,0 +1,26 @@
+seed: 0
+device: "cuda"
+
+mode: "train"
+
+data:
+  path: "./dataset/"
+  name: "panli"
+  dim: 5
+
+model:
+  path: "./checkpoints/"
+  name: 'model'
+  window_size: 100
+  step: 100
+  batch_size: 512
+  lr: 1e-5
+  hidden_dim: 128
+  dropout: 0.2
+  n_layers: 3
+  num_cycle: 20
+  bidirectional: False
+
+train:
+  epochs: 10
+  
