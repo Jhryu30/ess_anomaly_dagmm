@@ -4,12 +4,25 @@
 ![overview](figures/overview.jpg)
 
 
+
+## Dataset
+Voltage, Current, SOC, Temperature, Voltage gap
+```bash
+dataset
+|- panli
+   |- train.npy         # (N, 5)
+   |- test.npy          # (N, 5)
+   |- test_labels.npy   # (N, 1)
+|- sionyu
+   ...
+```
+
 ## Usage
+python 3.8.13
 ```bash
 conda env create -f conda_env.yaml
 conda activate essanomaly
 ```
-
 
 ## config
 - data
@@ -29,5 +42,5 @@ conda activate essanomaly
 
 
 ## TODO
-- F1 metric for test data
-- Validation
+- [x] F1 metric for test data   
+- [ ] Validation

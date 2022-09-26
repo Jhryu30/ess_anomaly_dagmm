@@ -1,0 +1,16 @@
+defaults:
+  - model: deepsvdd
+
+seed: 0
+device: "cuda"
+
+mode: "train"
+
+data:
+  path: "./dataset/"
+  name: sionyu
+  dim: 5
+
+train:
+  epochs: 10
+  

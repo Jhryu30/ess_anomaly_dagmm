@@ -11,24 +11,8 @@ from util import set_seed
 from dataloader import ESSDataset
 from models import DeepSVDD
 
-def get_loss(output, center):
-    return (output - center) ** 2
-
-def get_init(model, dataloader, num_cycle, device):
-    outputs = []
-    with torch.no_grad():
-        for i, (data, _) in enumerate(dataloader):
-            data = data.float().to(device)
-            output = model(data) # (B, H)
-            output = output.mean(axis=0) # (H, )
-            outputs.append(output.cpu())
-            if i == num_cycle:
-                break
-        c = torch.mean(torch.stack(outputs), axis=0)
-    return c
-
 def train(cfg):
-    model_path = Path(cfg.model.path) / cfg.data.name
+    model_path = Path(cfg.model.path) / cfg.data.name / cfg.model.name
     if not model_path.exists():
         model_path.mkdir(parents=True)
 
@@ -46,15 +30,14 @@ def train(cfg):
                      hidden_dim=cfg.model.hidden_dim, 
                      n_layers=cfg.model.n_layers, 
                      dropout=cfg.model.dropout, 
-                     bidirectional=cfg.model.bidirectional)
+                     bidirectional=cfg.model.bidirectional,
+                     model_path=model_path)
     model.to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.model.lr)
 
-    center = get_init(model, train_loader, cfg.model.num_cycle, device)
-    torch.save(center, model_path / 'center.pt')
-
-    center = center.to(device)
+    if cfg.model.name == 'deepsvdd':
+        model.init(train_loader, cfg.model.num_cycle, device)
 
     for epoch in range(cfg.train.epochs):
         train_losses, valid_losses = [], []
@@ -64,7 +47,7 @@ def train(cfg):
             data = data.float().to(device)
             output = model(data)
 
-            loss = get_loss(output, center).mean()
+            loss = model.get_loss(output).mean()
             train_losses.append(loss.item())
 
             loss.backward()
@@ -75,7 +58,7 @@ def train(cfg):
             for i, (data, target) in enumerate(valid_loader):
                 data = data.float().to(device)
                 output = model(data)
-                loss = get_loss(output, center).mean()
+                loss = model.get_loss(output).mean()
                 valid_losses.append(loss.item())
 
         train_loss = np.mean(train_losses)
@@ -87,7 +70,7 @@ def train(cfg):
 def test(cfg):
     epoch = cfg.train.epochs - 1
 
-    model_path = Path(cfg.model.path) / cfg.data.name
+    model_path = Path(cfg.model.path) / cfg.data.name / cfg.model.name
     device = torch.device(cfg.device)
     
     test_dataset = ESSDataset(cfg.data.path, cfg.data.name, cfg.model.window_size,
@@ -99,11 +82,12 @@ def test(cfg):
                      hidden_dim=cfg.model.hidden_dim, 
                      n_layers=cfg.model.n_layers, 
                      dropout=cfg.model.dropout, 
-                     bidirectional=cfg.model.bidirectional)
+                     bidirectional=cfg.model.bidirectional,
+                     model_path=model_path)
     model.to(device)
 
-    center = torch.load(model_path / 'center.pt')
-    center = center.to(device)
+    if cfg.model.name == 'deepsvdd':
+        model.load(device)
 
     model.load_state_dict(torch.load(model_path / f'{epoch}.pth'))
     model.eval()
@@ -114,7 +98,7 @@ def test(cfg):
         for i, (data, labels) in enumerate(test_loader):
             data = data.float().to(device)
             output = model(data)
-            loss = get_loss(output, center).mean(axis=-1)
+            loss = model.get_loss(output).mean(axis=-1)
             loss = loss.cpu().numpy()
             test_losses.append(loss)
             test_labels.append(labels)
@@ -122,9 +106,19 @@ def test(cfg):
     test_losses = np.concatenate(test_losses, axis=0).reshape(-1)
     test_labels = np.concatenate(test_labels, axis=0).reshape(-1)
 
+    thres = np.quantile(test_losses, q=0.99)
+    test_preds = (test_losses > thres).astype(int)
+
+    if cfg.model.name == 'deepsvdd':
+        test_preds = np.repeat(test_preds, 100)
+
+    precision, recall, f1, _ = precision_recall_fscore_support(test_labels, test_preds, average='binary')
+
+    print(f"precision: {precision:.3f} | recall: {recall:.3f} | f1 score: {f1:.3f}")
+
     np.save(model_path / 'test_losses.npy', test_losses)
 
-@hydra.main(config_path="./", config_name="config", version_base='1.2')
+@hydra.main(config_path="./config/", config_name="config", version_base='1.2')
 def main(cfg):
     set_seed(cfg.seed)
 
