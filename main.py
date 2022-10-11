@@ -10,6 +10,7 @@ import wandb
 from util import set_seed
 from dataloader import ESSDataset
 from models import DeepSVDD
+from models import DAGMM 
 
 def train(cfg):
     model_path = Path(cfg.model.path) / cfg.data.name / cfg.model.name
@@ -26,12 +27,21 @@ def train(cfg):
     train_loader = DataLoader(train_dataset, batch_size=cfg.model.batch_size, shuffle=True)
     valid_loader = DataLoader(valid_dataset, batch_size=cfg.model.batch_size, shuffle=False)
 
-    model = DeepSVDD(input_dim=cfg.data.dim,
-                     hidden_dim=cfg.model.hidden_dim, 
-                     n_layers=cfg.model.n_layers, 
-                     dropout=cfg.model.dropout, 
-                     bidirectional=cfg.model.bidirectional,
-                     model_path=model_path)
+    if cfg.model.name == 'deepsvdd':
+        model = DeepSVDD(input_dim=cfg.data.dim,
+                        hidden_dim=cfg.model.hidden_dim, 
+                        n_layers=cfg.model.n_layers, 
+                        dropout=cfg.model.dropout, 
+                        bidirectional=cfg.model.bidirectional,
+                        model_path=model_path)
+
+    elif cfg.model.name == 'dagmm':
+        model = DAGMM(input_dim=cfg.data.dim,
+                    hidden_dim=cfg.model.hidden_dim,
+                    window_size=cfg.model.window_size,
+                    device=device)
+
+
     model.to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.model.lr)
@@ -78,12 +88,22 @@ def test(cfg):
 
     test_loader = DataLoader(test_dataset, batch_size=cfg.model.batch_size, shuffle=False)
 
-    model = DeepSVDD(input_dim=cfg.data.dim,
-                     hidden_dim=cfg.model.hidden_dim, 
-                     n_layers=cfg.model.n_layers, 
-                     dropout=cfg.model.dropout, 
-                     bidirectional=cfg.model.bidirectional,
-                     model_path=model_path)
+
+    if cfg.model.name == 'deepsvdd':
+        model = DeepSVDD(input_dim=cfg.data.dim,
+                        hidden_dim=cfg.model.hidden_dim, 
+                        n_layers=cfg.model.n_layers, 
+                        dropout=cfg.model.dropout, 
+                        bidirectional=cfg.model.bidirectional,
+                        model_path=model_path)
+
+    elif cfg.model.name == 'dagmm':
+        model = DAGMM(input_dim=cfg.data.dim,
+                    hidden_dim=cfg.model.hidden_dim,
+                    window_size=cfg.model.window_size,
+                    device=device)
+
+
     model.to(device)
 
     if cfg.model.name == 'deepsvdd':
@@ -98,10 +118,12 @@ def test(cfg):
         for i, (data, labels) in enumerate(test_loader):
             data = data.float().to(device)
             output = model(data)
-            loss = model.get_loss(output).mean(axis=-1)
+            loss = model.get_score(output)
             loss = loss.cpu().numpy()
+            loss = np.repeat(np.expand_dims(loss,axis=1), 100, axis=1)
             test_losses.append(loss)
             test_labels.append(labels)
+            # breakpoint()
 
     test_losses = np.concatenate(test_losses, axis=0).reshape(-1)
     test_labels = np.concatenate(test_labels, axis=0).reshape(-1)
@@ -109,8 +131,11 @@ def test(cfg):
     thres = np.quantile(test_losses, q=0.99)
     test_preds = (test_losses > thres).astype(int)
 
+
     if cfg.model.name == 'deepsvdd':
         test_preds = np.repeat(test_preds, 100)
+    
+    # breakpoint()
 
     precision, recall, f1, _ = precision_recall_fscore_support(test_labels, test_preds, average='binary')
 
